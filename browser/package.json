@@ -1,0 +1,27 @@
+{
+  "name": "browser",
+  "version": "1.0.0",
+  "description": "A browser build on top of electron",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev:old-ref": "concurrently \"cd gui && npm run dev\" \"electronmon ./main.js --trace-warnings\"",
+    "dev": "electronmon ./main.js --trace-warnings"
+  },
+  "keywords": [
+    "electron",
+    "browser"
+  ],
+  "author": "Abhishek Chaurasiya",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^38.4.0",
+    "electronmon": "^2.0.3"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "electron-store": "^11.0.2",
+    "form-data": "^4.0.4"
+  }
+}
