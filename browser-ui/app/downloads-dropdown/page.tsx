@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/item"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { SERVER_URL } from "@/hooks/constants"
+import { useDownloadProgress } from "@/hooks/useDownloadProgress"
+import { useDownloads } from "@/hooks/useDownloads"
+import { useLocalDownloads } from "@/hooks/useLocalDownload"
 import { cn } from "@/lib/utils"
 import {
     IconDeviceFloppy,
@@ -24,41 +28,22 @@ import {
     IconTrashFilled,
     IconLoader2
 } from "@tabler/icons-react"
-import Link from "next/link"
-import { useEffect, useState } from "react"
-import useSWR from "swr"
-
-const SERVER_URL = "http://localhost:8000"
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
-
-export const useDownloads = () => {
-    const { data, error, mutate, isLoading } = useSWR(`${SERVER_URL}/downloads`, fetcher)
-
-    // data.files will be your downloadItems
-    const downloadItems = data?.files || []
-
-    return {
-        downloadItems,
-        isLoading,
-        error,
-        refresh: mutate // call refresh() to refetch
-    }
-}
+import { useEffect, useMemo, useState } from "react"
 
 interface FileItem {
     name: string
     size: number
     sizeFormatted: string
-    modified: Date
-    downloadUrl: string
-    previewUrl: string
+    modified?: Date
+    downloadUrl?: string
+    previewUrl?: string
 }
 
 export default function DownloadsDropdown() {
     // const [downloadItems, setDownloadItems] = useState<FileItem[]>([])
     const [searchQuery, setSearchQuery] = useState("")
     const { downloadItems, error, refresh, isLoading } = useDownloads()
+    useDownloadProgress()
 
     useEffect(() => {
         const listenDownloadStart = () => setTimeout(refresh, 1)
@@ -134,6 +119,7 @@ export default function DownloadsDropdown() {
                 {/* {!isLoading && filteredItems.length > 0 && ( */}
                 {filteredItems.length > 0 && (
                     <ScrollArea className="h-64 p-1 overflow-hidden">
+                        <DownloadingFiles />
                         {filteredItems.map((item) => (
                             <File key={item.name} {...item} />
                         ))}
@@ -153,12 +139,49 @@ export default function DownloadsDropdown() {
     )
 }
 
+function formatFileSize(bytes: number): string {
+    if (bytes === 0) return "0 B"
+    const k = 1024
+    const sizes = ["B", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+}
+
+function DownloadingFiles() {
+    const { activeDownloads } = useDownloadProgress()
+    const { refresh } = useDownloads()
+    const len = Object.keys(activeDownloads).length
+    useEffect(() => {
+        if (len > 0) {
+            refresh()
+        }
+    }, [len])
+    return (
+        <>
+            {Object.values(activeDownloads).map((file) => (
+                <File
+                    key={file.fileName}
+                    loading={
+                        file.totalBytes > 0 ? (file.downloadedBytes / file.totalBytes) * 100 : 0
+                    }
+                    name={file.fileName}
+                    previewUrl={file.previewUrl}
+                    downloadUrl={file.downloadUrl}
+                    size={file.size || 0}
+                    sizeFormatted={formatFileSize(file.downloadedBytes || 0)}
+                />
+            ))}
+        </>
+    )
+}
+
 type FileProps = FileItem & {
-    loading?: boolean
+    loading?: number
 }
 function File(file: FileProps) {
     const { refresh } = useDownloads()
     const [deletingFile, setDeletingFile] = useState(false)
+    const { setDownloading } = useLocalDownloads()
     const shouldDisable = deletingFile
     return (
         <div
@@ -168,13 +191,14 @@ function File(file: FileProps) {
             <IconFileFilled className="size-4 mt-1" />
             <div className="flex flex-col gap-1 flex-1 w-full overflow-hidden min-w-0">
                 <span className="text-ellipsis line-clamp-1 break-all text-xs">{file.name}</span>
-                {file.loading ? (
+                {file.loading && (
                     <span
-                        className="loader"
-                        style={{ animationDelay: `${Math.round(Math.random() * 3)}s` }}
+                        className="h-0.5 bg-blue-500"
+                        style={{ width: `${file.loading}%` }}
                     ></span>
-                ) : (
-                    <span className="flex text-[0.6rem] justify-between tracking-wide text-muted-foreground">
+                )}
+                <span className="flex text-[0.6rem] justify-between tracking-wide text-muted-foreground">
+                    {!file.loading ? (
                         <button
                             className="cursor-pointer text-left w-fit hover:text-blue-500 transition-colors"
                             disabled={shouldDisable}
@@ -182,21 +206,29 @@ function File(file: FileProps) {
                         >
                             Preview
                         </button>
-                        <span className="font-light text-muted-foreground">
-                            {file.sizeFormatted} • {new Date(file.modified).toLocaleDateString()}
-                        </span>
+                    ) : (
+                        <span>Downloading...</span>
+                    )}
+                    <span className="font-light text-muted-foreground">
+                        {file.sizeFormatted} •{" "}
+                        {new Date(file.modified || new Date()).toLocaleDateString()}
                     </span>
-                )}
+                </span>
             </div>
             <div
                 className={cn(
                     "flex items-center absolute top-2 right-2 gap-1 bg-background group-hover:bg-accent hover:bg-accent text-current/60 opacity-0 group-hover:opacity-100",
-                    deletingFile && "opacity-100!"
+                    deletingFile && "opacity-100!",
+                    file.loading && "opacity-0!"
                 )}
             >
                 <button
                     className="hover:text-blue-500 hover:scale-[1.1] cursor-pointer"
-                    onClick={() => browser.downloader.saveAs(`${SERVER_URL}${file.downloadUrl}`)}
+                    onClick={async () => {
+                        setDownloading(true)
+                        await browser.downloader.saveAs(`${SERVER_URL}${file.downloadUrl}`)
+                        setDownloading(false)
+                    }}
                     disabled={shouldDisable}
                     title="Save Offline"
                 >

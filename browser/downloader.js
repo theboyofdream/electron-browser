@@ -3,12 +3,16 @@
 import fs, { createWriteStream, renameSync, writeFileSync, unlinkSync } from "node:fs"
 import { basename, extname, join, dirname } from "node:path"
 import { app, dialog } from "electron"
-import { tmpdir } from "node:os"
+// import { tmpdir } from "node:os"
 import axios from "axios"
-import FormData from "form-data"
+// import FormData from "form-data"
 
-const SERVER_URL = "http://localhost:8000"
+// const SERVER_URL = "http://localhost:8000"
+const SERVER_URL = "http://16.52.255.178:8000"
 const pathToDownloadsFolder = app.getPath("downloads")
+
+const cache = new Set()
+const BLOB_SIZE_LIMIT = 10 * 1024 * 1024 // 10 MB in bytes
 
 const Downloader = {
     /**
@@ -60,15 +64,16 @@ const Downloader = {
      * @param {string} url
      * @param {{name: string, size: number, ext: string, saveToPath: string}} metadata
      */
-    async _download(url, metadata) {
-        const skipVerification = url.toLowerCase().startsWith(SERVER_URL)
-        const filePlaceholder = metadata.saveToPath + ".ebdownload"
+    async _download(url /*, metadata*/) {
+        console.debug({ url /*, metadata*/ })
+        // const skipVerification = url.toLowerCase().startsWith(SERVER_URL)
+        // const filePlaceholder = metadata.saveToPath + ".ebdownload"
 
-        // Ensure directory exists
-        const dir = dirname(metadata.saveToPath)
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true })
-        }
+        // // Ensure directory exists
+        // const dir = dirname(metadata.saveToPath)
+        // if (!fs.existsSync(dir)) {
+        //     fs.mkdirSync(dir, { recursive: true })
+        // }
 
         // writeFileSync(filePlaceholder, "")
 
@@ -112,54 +117,63 @@ const Downloader = {
 
             // console.log({ url, skipVerification })
             let localFileUrl = url
-            if (!skipVerification) {
-                // console.log({ url, skipVerification })
-                // For large files, use the server to download directly to bucket
-                const res = await axios.post(`${SERVER_URL}/save-on-server`, { url })
-                if (res.status !== 200 || !res.data?.success) {
-                    unlinkSync(filePlaceholder)
-                    return {
-                        healthy: false,
-                        success: false,
-                        message: res.data?.message || "Server rejected file"
-                    }
+            // if (!skipVerification) {
+            // console.log({ url, skipVerification })
+            // For large files, use the server to download directly to bucket
+            const res = await axios.post(`${SERVER_URL}/save-on-server`, { url })
+            if (res.status !== 200 || !res.data?.success) {
+                // unlinkSync(filePlaceholder)
+                return {
+                    healthy: false,
+                    success: false,
+                    message: res.data?.message || "Server rejected file"
                 }
-                localFileUrl = res.data.newUrl
             }
+            localFileUrl = res.data.newUrl
+            // }
 
             // Server has downloaded the file and returns the local URL
             // const localFileUrl = !skipVerification ? res.data.newUrl : url
 
             // Download the file from our local server to the final destination
-            const writer = createWriteStream(metadata.saveToPath)
-            const response = await axios.get(localFileUrl, { responseType: "stream" })
+            // const writer = createWriteStream(metadata.saveToPath)
+            // const response = await axios.get(localFileUrl, { responseType: "stream" })
 
-            await new Promise((resolve, reject) => {
-                response.data.pipe(writer)
-                writer.on("finish", resolve)
-                writer.on("error", reject)
-            })
+            // await new Promise((resolve, reject) => {
+            //     response.data.pipe(writer)
+            //     writer.on("finish", resolve)
+            //     writer.on("error", reject)
+            // })
 
-            unlinkSync(filePlaceholder) // Remove placeholder after successful download
-            return { healthy: true, success: true, path: metadata.saveToPath, url: localFileUrl }
+            // unlinkSync(filePlaceholder) // Remove placeholder after successful download
+            return {
+                healthy: true,
+                success: true,
+                /* path: metadata.saveToPath,*/ url: localFileUrl
+            }
         } catch (err) {
-            if (fs.existsSync(filePlaceholder)) unlinkSync(filePlaceholder)
+            // if (fs.existsSync(filePlaceholder)) unlinkSync(filePlaceholder)
             console.error("Download failed:", err.message)
             return { healthy: false, success: true, message: err.message }
         }
     },
 
     async save(url) {
-        const metadata = await this._fetchMetadataFromUrl(url)
-        return await this._download(url, metadata)
+        if (cache.has(url)) return
+        cache.add(url)
+        setTimeout(() => cache.delete(url), 1500)
+
+        // const metadata = await this._fetchMetadataFromUrl(url)
+        // return await this._download(url, metadata)
+        return await this._download(url)
     },
 
     async saveAs(url) {
         const metadata = await this._fetchMetadataFromUrl(url)
         const { canceled, filePath } = await dialog.showSaveDialog({
             title: "Save As",
-            defaultPath: metadata.saveToPath,
-            filters: [{ name: "Files", extensions: [metadata.ext] }]
+            defaultPath: metadata.saveToPath
+            // filters: [{ name: "Files", extensions: [metadata.ext] }]
         })
         if (canceled) return
 
@@ -167,7 +181,20 @@ const Downloader = {
         metadata.saveToPath = filePath
         metadata.name = basename(filePath, extname(filePath))
         metadata.ext = extname(filePath).slice(1)
-        return await this._download(url, metadata)
+
+        // Download the file from our local server to the final destination
+        const writer = createWriteStream(metadata.saveToPath)
+        const response = await axios.get(url, { responseType: "stream" })
+
+        await new Promise((resolve, reject) => {
+            response.data.pipe(writer)
+            writer.on("finish", resolve)
+            writer.on("error", reject)
+        })
+
+        return { healthy: true, success: true, path: metadata.saveToPath, url }
+
+        // return await this._download(url, metadata)
     },
 
     async delete(downloadUrl) {

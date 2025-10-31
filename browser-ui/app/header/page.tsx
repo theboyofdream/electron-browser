@@ -2,6 +2,9 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import { useDownloadProgress } from "@/hooks/useDownloadProgress"
+import { useLocalDownloads } from "@/hooks/useLocalDownload"
+import { useTabs } from "@/hooks/useTabs"
 import { cn } from "@/lib/utils"
 import {
     IconArrowLeft,
@@ -70,7 +73,7 @@ export default function Home() {
                 <Button variant={"ghost"} size={"icon-sm"} onClick={() => browser.tab.reload()}>
                     <IconReload />
                 </Button>
-                <div className="flex-1 relative">
+                <div className="flex-1 items-center relative">
                     <IconSearch className="text-muted-foreground size-4 absolute top-0 left-0 transform translate-7/12" />
                     <SearchInput />
                     <span className=" absolute right-0 top-0 flex"></span>
@@ -93,6 +96,8 @@ export default function Home() {
 function DownloadButton() {
     const [deletingFile, setDeletingFile] = useState(false)
     const [downloadingFile, setDownloadingFile] = useState(false)
+    const { downloading } = useLocalDownloads()
+    const { activeDownloads } = useDownloadProgress()
 
     useEffect(() => {
         const listenDeleteStart = () => setDeletingFile(() => true)
@@ -104,7 +109,7 @@ function DownloadButton() {
         const listenDownloadEnd = () => setDownloadingFile(() => false)
         browser.listener("downloader:startedDownloading", listenDownloadStart)
         browser.listener("downloader:endededDownloading", listenDownloadEnd)
-        
+
         return () => {
             browser.removeListener("downloader:deletingFileStart", listenDeleteStart)
             browser.removeListener("downloader:deletingFileEnd", listenDeleteEnd)
@@ -123,7 +128,10 @@ function DownloadButton() {
                 className={cn(
                     "absolute top-0 left-0 size-8 opacity-0",
                     deletingFile && "text-destructive animate-spin opacity-100",
-                    downloadingFile && "text-blue-500 animate-spin opacity-100",
+                    downloadingFile ||
+                        (Object.keys(activeDownloads).length > 0 &&
+                            "text-blue-500 animate-spin opacity-100"),
+                    downloading && "text-green-500 animate-spin opacity-100"
                 )}
                 strokeWidth={0.9}
             />
@@ -153,7 +161,7 @@ function SearchInput() {
         <Input
             ref={inputRef}
             type="search"
-            className="px-8 pr-2 border-0 bg-secondary my-0.5 h-8 text-muted-foreground focus-within:text-current"
+            className="px-8 pr-2 rounded-full border-0 bg-background/50 my-0.5 h-7.5 text-muted-foreground focus-within:text-current"
             placeholder="Search or enter web address"
             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                 if (e.key === "Enter") {
@@ -173,45 +181,48 @@ type TabData = {
 }
 
 type TabButtonProps = {
+    id: number
+    // loading?: boolean
     favicon?: string
     title?: string
-    active: boolean
-    onClick?: () => void
-    onClose?: () => void
+    // active: boolean
+    // onClick?: () => void
+    // onClose?: () => void
 }
 
-function TabButton({ favicon, title, active, onClick, onClose }: TabButtonProps) {
+function TabButton({ id, favicon, title /*active, onClick, onClose */ }: TabButtonProps) {
+    const { activeTabId, loadingTabId } = useTabs()
+    const isActive = id == activeTabId
+    const isLoading = id == loadingTabId
     return (
         <Button
-            variant={active ? "secondary" : "ghost"}
+            variant={isActive ? "secondary" : "ghost"}
             className={cn(
-                "px-0 pl-2 text-xs h-8 font-light max-w-[210px]",
-                !active && "opacity-50 hover:opacity-100"
+                "px-0 pl-2 text-xs h-8 font-light w-[180px]",
+                !isActive && "opacity-50 hover:opacity-100"
             )}
             size={"sm"}
-            onClick={onClick}
+            onClick={() => browser.tab.switch(id)}
         >
-            {favicon ? (
+            {isLoading ? (
+                <IconLoader2 className="size-4 animate-spin text-current" />
+            ) : favicon ? (
                 <img
                     src={favicon}
+                    alt="Favicon"
                     className="size-4"
-                    // alt="Website favicon"
-                    // width={16}
-                    onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-                        // If favicon fails to load, fallback to IconWorld
-                        e.currentTarget.style.display = "none"
-                    }}
+                    onError={(e) => (e.currentTarget.style.display = "none")}
                 />
             ) : (
-                <IconWorld className="size-4" />
+                <IconWorld className="size-4 text-current" strokeWidth={1.5} />
             )}
-            <span className="w-full text-ellipsis overflow-hidden">{title || "Untitled"}</span>
+            <span className="w-full text-left text-ellipsis overflow-hidden">{title || "Untitled"}</span>
             <Button
                 variant={"ghost"}
                 className="hover:text-destructive hover:bg-transparent! px-1.5!"
                 onClick={(e) => {
                     e.stopPropagation()
-                    onClose?.()
+                    browser.tab.close(id)
                 }}
             >
                 <IconX />
@@ -221,60 +232,26 @@ function TabButton({ favicon, title, active, onClick, onClose }: TabButtonProps)
 }
 
 export function TabBar() {
-    const [tabs, setTabs] = useState<TabData[]>([])
-
-    useEffect(() => {
-        async function fetchTabs() {
-            const list = await browser.tab.list()
-            setTabs(list)
-        }
-        fetchTabs()
-
-        // --- Listen for updates from main process ---
-        const handleUpdate = (_: unknown, data: { id: number }) => {
-            setTabs((prev) => prev.map((t) => (t.id === data.id ? { ...t, ...data } : t)))
-        }
-
-        const handleSetActive = (_: unknown, data: { id: number }) => {
-            setTabs((prev) => prev.map((t) => ({ ...t, active: t.id === data.id })))
-        }
-
-        const handleClosed = (_: unknown, id: number) => {
-            setTabs((prev) => prev.filter((t) => t.id !== id))
-        }
-
-        browser.listener("tab:new", fetchTabs)
-        browser.listener("tab:update", handleUpdate)
-        browser.listener("tab:setActive", handleSetActive)
-        browser.listener("tab:closed", handleClosed)
-
-        return () => {
-            browser.removeListener("tab:new", fetchTabs)
-            browser.removeListener("tab:update", handleUpdate)
-            browser.removeListener("tab:setActive", handleSetActive)
-            browser.removeListener("tab:closed", handleClosed)
-        }
-    }, [])
-
-    const handleSwitch = (id: number) => browser.tab.switch(id)
-    const handleClose = (id: number) => browser.tab.close(id)
-
+    const { tabs } = useTabs()
+   
     return (
-        <span id="tabs-pills" className="flex overflow-x-scroll hide-scrollbar">
+        <span id="tabs-pills" className="flex gap-0.5 overflow-x-scroll hide-scrollbar">
             {tabs.map((t) => (
                 <TabButton
                     key={t.id}
+                    id={t.id}
                     favicon={t.favicon}
                     title={t.title}
-                    active={t.active}
-                    onClick={() => handleSwitch(t.id)}
-                    onClose={() => handleClose(t.id)}
+                    // active={t.id == activeTabId}
+                    // onClick={() => handleSwitch(t.id)}
+                    // onClose={() => handleClose(t.id)}
+                    // loading={t.id == activeTabId && loading}
                 />
             ))}
             <Button
                 variant={"ghost"}
-                size={"icon"}
-                className="ml-1 h-8"
+                size={"icon-sm"}
+                className="ml-1"
                 onClick={() => browser.tab.new()}
             >
                 <PlusIcon />

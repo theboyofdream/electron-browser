@@ -102,24 +102,23 @@ const Dropdowns = {
         const { width } = frames.base.getContentBounds()
         const targetBounds = {
             x: width - 302,
-            y: HEADER_SIZE,
+            y: HEADER_SIZE + 1,
             width: 300,
             height: 200
         }
 
         // auto-hide the other dropdown
-        if (name !== "downloads" && this.isVisible("downloads")) this.hide("downloads")
-        if (name !== "more-options" && this.isVisible("more-options")) this.hide("more-options")
+        if (name !== "downloads" && this.isVisible("downloads")) await this.hide("downloads")
+        if (name !== "more-options" && this.isVisible("more-options"))
+            await this.hide("more-options")
 
         if (name === "downloads") {
             frames.downloadDropdown.setBounds({ ...targetBounds, height: 380 })
-            // frames.downloadDropdown.webContents.reload()
             frames.base.contentView.addChildView(frames.downloadDropdown)
         }
 
         if (name === "more-options") {
             frames.moreOptions.setBounds(targetBounds)
-            // frames.moreOptions.webContents.reload()
             frames.base.contentView.addChildView(frames.moreOptions)
         }
     },
@@ -127,7 +126,8 @@ const Dropdowns = {
     /**
      * @param {'downloads'|'more-options'} name
      */
-    hide(name) {
+    async hide(name) {
+        await new Promise((resolve) => setTimeout(resolve, 600))
         if (name === "downloads" && this.isVisible("downloads")) {
             frames.base.contentView.removeChildView(frames.downloadDropdown)
         }
@@ -136,7 +136,8 @@ const Dropdowns = {
         }
     },
 
-    hideAll() {
+    async hideAll() {
+        await new Promise((resolve) => setTimeout(resolve, 600))
         this.hide("downloads")
         this.hide("more-options")
     },
@@ -184,6 +185,7 @@ const Tabs = {
             canGoForward: tabData.view.webContents.navigationHistory.canGoForward(),
             active: tabData.id === activeTabId
         })
+        frames.header.webContents.send("tab:setActive", tabData.id)
     },
 
     create(query = "https://www.google.com") {
@@ -201,13 +203,6 @@ const Tabs = {
 
         const tabData = { id, view, title: "", url, favicon: "", loading: false }
         tabs.set(id, tabData)
-
-        frames.base.contentView.addChildView(view)
-        activeTabId = id
-        handleWindowResize()
-        attachContextMenu()
-
-        view.webContents.loadURL(url)
 
         view.webContents.on("did-start-loading", () => {
             tabData.loading = true
@@ -240,18 +235,41 @@ const Tabs = {
         })
         view.webContents.session.on("will-download", (event, item) => {
             event.preventDefault()
-            save(item.getURL())
+            save(item.getURL(), "will download")
         })
-        view.webContents.on("before-input-event", () => Dropdowns.hideAll())
-        view.webContents.on("did-fail-load", () => {
-            setTimeout(() => {
-                view.webContents.reload()
-                // view.webContents.loadURL(`http://localhost:3000/not-found?q=${query}`)
-            }, 1000 * 10)
-        })
+        // view.webContents.on("o")
+        // view.webContents.on("before-input-event", () => Dropdowns.hideAll())
+        // view.webContents.on("input-event", () => Dropdowns.hideAll())
+        view.webContents.on("focus", () => Dropdowns.hideAll())
+        view.webContents.on("did-fail-load", () => view.webContents.reload, 1000 * 10)
+        Array(["did-start-loading", "did-navigate"]).map((startType) =>
+            view.webContents.on(startType, () => {
+                // Tabs.updateRenderer({
+                //     ...tabData,
+                //     loading: true
+                // })
+                frames.header.webContents.send("tab:start-loading", id)
+            })
+        )
+        Array(["did-stop-loading", "did-fail-load"]).map((startType) =>
+            view.webContents.on(startType, () => {
+                // Tabs.updateRenderer({
+                //     ...tabData,
+                //     loading: false
+                // })
+                frames.header.webContents.send("tab:stop-loading", id)
+            })
+        )
 
-        handleWindowResize(view)
+        frames.base.contentView.addChildView(view)
+        view.webContents.loadURL(url)
+        // activeTabId = id
+        // handleWindowResize()
+        // handleWindowResize(view)
+        // attachContextMenu(view)
         frames.header.webContents.send("tab:new")
+        this.show(id)
+        // frames.header.webContents.send("tab:setActive", id)
 
         return id
     },
@@ -261,27 +279,25 @@ const Tabs = {
         if (!tab) return
         frames.base.contentView.removeChildView(tab.view)
         tabs.delete(id)
-        if (activeTabId === id) activeTabId = tabs.size ? [...tabs.keys()][0] : null
+        if (activeTabId === id) {
+            const keys = [...tabs.keys()]
+            activeTabId = keys.length ? keys[keys.length - 1] : null
+        }
         if (activeTabId) this.show(activeTabId)
         frames.header.webContents.send("tab:closed", id)
     },
 
     show(id) {
         const tab = tabs.get(id)
-        console.log(id)
         if (!tab) {
             console.log("no tab found with id", id)
             return
         }
-        // if (activeTabId && tabs.has(activeTabId)) {
-        //     frames.base.contentView.removeChildView(tabs.get(activeTabId).view)
-        // }
-        // frames.base.contentView.addChildView(tab.view)
-        // frames.base.contentView.setChildIndex(tab.view, frames.base.contentView.children.length - 1)
         activeTabId = id
-        attachContextMenu()
         handleWindowResize()
-        this.updateRenderer(tab)
+        frames.header.webContents.send("tab:setActive", id)
+        attachContextMenu(tab.view)
+        // this.updateRenderer(tab)
     },
 
     navigate(query) {
@@ -335,9 +351,14 @@ const Tabs = {
     }
 }
 
-function attachContextMenu() {
+function attachContextMenu(_view) {
     // frames.webview.webContents.on("context-menu", (event, params) => {
-    const view = tabs.get(activeTabId)?.view
+    let view = null
+    if (_view) {
+        view = _view
+    } else {
+        view = tabs.get(activeTabId)?.view
+    }
     if (!view) return
     view.webContents.on("context-menu", (event, params) => {
         const template = []
@@ -416,30 +437,25 @@ function attachContextMenu() {
             )
         }
 
-        // Image context
-        if (params.mediaType === "image") {
+        // Image/Video/Audio context
+        if (["image", "video", "audio"].includes(params.mediaType.toLowerCase())) {
+            const mediaType = params.mediaType
             template.push(
                 {
-                    label: "Open Image in new Tab",
+                    label: `Open ${mediaType} in new Tab`,
                     click: () => Tabs.create(params.srcURL)
                 },
                 {
-                    label: "Copy Image URL",
+                    label: `Copy ${mediaType} URL`,
                     click: () => clipboard.writeText(params.srcURL)
                 },
                 {
-                    label: "Save Image",
-                    click: () => {
-                        // console.log(params.srcURL)
-                        save(params.srcURL)
-                    }
+                    label: `Save ${mediaType}`,
+                    click: () => save(params.srcURL, "save")
                 },
                 // {
-                //     label: "Save Image As...",
-                //     click: () => {
-                //         // console.log(params.srcURL)
-                //         saveAs(params.srcURL)
-                //     }
+                //     label: `Save ${mediaType} As...`,
+                //     click: () => save(params.srcURL, "save as")
                 // },
                 { type: "separator" }
             )
@@ -450,20 +466,15 @@ function attachContextMenu() {
             {
                 label: "Reload",
                 role: "reload",
-                // click: () => frames.webview.webContents.reload()
                 click: () => view.webContents.reload()
             },
             {
                 label: "Back",
-                // enabled: frames.webview.webContents.navigationHistory.canGoBack(),
-                // click: () => frames.webview.webContents.navigationHistory.goBack()
                 enabled: view.webContents.navigationHistory.canGoBack(),
                 click: () => view.webContents.navigationHistory.goBack()
             },
             {
                 label: "Forward",
-                // enabled: frames.webview.webContents.navigationHistory.canGoForward(),
-                // click: () => frames.webview.webContents.navigationHistory.goForward()
                 enabled: view.webContents.navigationHistory.canGoForward(),
                 click: () => view.webContents.navigationHistory.goForward()
             }
@@ -474,7 +485,6 @@ function attachContextMenu() {
                 { type: "separator" },
                 {
                     label: "Inspect Element",
-                    // click: () => frames.webview.webContents.inspectElement(params.x, params.y)
                     click: () => view.webContents.inspectElement(params.x, params.y)
                 }
             )
@@ -482,7 +492,6 @@ function attachContextMenu() {
 
         const menu = Menu.buildFromTemplate(template)
         menu.popup({
-            // window: BrowserWindow.fromWebContents(frames.webview.webContents)
             window: BrowserWindow.fromWebContents(view.webContents)
         })
     })
@@ -511,7 +520,8 @@ function handleWindowResize(view) {
     })
 }
 
-const save = async (url) => {
+const save = async (url, source) => {
+    console.debug(source, url)
     await Dropdowns.show("downloads")
     frames.header.webContents.send("downloader:startedDownloading")
     frames.downloadDropdown.webContents.send("downloader:startedDownloading")
@@ -529,12 +539,6 @@ const saveAs = async (url) => {
     await Dropdowns.show("downloads")
     frames.header.webContents.send("downloader:endededDownloading")
     frames.downloadDropdown.webContents.send("downloader:endededDownloading")
-    // // Downloader.saveAs(url).then((res) => {
-    // Downloader.saveAs(url).finally(() => {
-    //     // if (res.healthy) {
-    //     Dropdowns.toggle("downloads")
-    //     // }
-    // })
 }
 
 async function onReady() {
@@ -564,7 +568,7 @@ async function onReady() {
     ipcMain.handle("tab:getMetadata", (_, id) => Tabs.getMetadata(id))
     ipcMain.handle("tab:list", () => Tabs.list())
     // downloader
-    ipcMain.handle("downloader:save", (_, url) => save(url))
+    ipcMain.handle("downloader:save", (_, url) => save(url, "ipc"))
     ipcMain.handle("downloader:saveAs", (_, url) => saveAs(url))
     ipcMain.handle("downloader:delete", async (_, downloadUrl) => {
         frames.header.webContents.send("downloader:deletingFileStart", true)
@@ -591,12 +595,6 @@ async function onReady() {
         ...BROWSER_WINDOW_OPTIONS,
         transparent: false
     })
-    // frames.webview = new WebContentsView({
-    //     webPreferences: {
-    //         ...BROWSER_WINDOW_OPTIONS.webPreferences,
-    //         preload: undefined
-    //     }
-    // })
     // attachContextMenu()
     // frames.webview.webContents.loadURL("https://www.github.com/theboyofdream")
 
@@ -608,15 +606,15 @@ async function onReady() {
         hasShadow: true
     })
     frames.downloadDropdown.webContents.loadURL("http://localhost:3000/downloads-dropdown")
-    frames.downloadDropdown.on("blur", () => Dropdowns.hideAll())
-    // frames.downloadDropdown.webContents.openDevTools()
+    // frames.downloadDropdown.on("blur", () => Dropdowns.hideAll())
+    // frames.downloadDropdown.webContents.openDevTools({ mode: "detach" })
 
     frames.moreOptions = new WebContentsView({
         ...BROWSER_WINDOW_OPTIONS,
         hasShadow: true
     })
     frames.moreOptions.webContents.loadURL("http://localhost:3000/more-options-dropdown")
-    frames.moreOptions.on("blur", () => Dropdowns.hideAll())
+    // frames.moreOptions.on("blur", () => Dropdowns.hideAll())
 
     frames.header = new WebContentsView({
         ...BROWSER_WINDOW_OPTIONS,
@@ -624,7 +622,7 @@ async function onReady() {
         show: true
     })
     frames.header.webContents.loadURL("http://localhost:3000/header")
-    frames.header.webContents.openDevTools({ mode: "detach" })
+    // frames.header.webContents.openDevTools({ mode: "detach" })
 
     //----------------------
     // handle window resize
@@ -646,12 +644,16 @@ async function onReady() {
     })
 
     frames.header.webContents.on("focus", () => Dropdowns.hideAll())
-    frames.header.webContents.on("before-input-event", () => Dropdowns.hideAll())
-    frames.header.webContents.on("context-menu", (e) => e.preventDefault())
-    frames.base.webContents.on("focus", () => Dropdowns.hideAll())
-    frames.base.webContents.on("before-input-event", () => Dropdowns.hideAll())
+    // frames.header.webContents.on("before-input-event", () => Dropdowns.hideAll())
+    // frames.header.webContents.on("context-menu", (e) => e.preventDefault())
+    // frames.base.webContents.on("focus", () => Dropdowns.hideAll())
+    // frames.base.webContents.on("before-input-event", () => Dropdowns.hideAll())
 
     frames.base.on("show", () => {
+        frames.base.webContents.invalidate()
+        handleWindowResize()
+    })
+    frames.base.on("resize", () => {
         frames.base.webContents.invalidate()
         handleWindowResize()
     })

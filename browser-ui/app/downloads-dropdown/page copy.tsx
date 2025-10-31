@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { SERVER_URL } from "@/hooks/constants"
 import {
     IconDeviceFloppy,
     IconFileFilled,
@@ -20,8 +21,6 @@ interface FileItem {
     downloadUrl: string
     previewUrl: string
 }
-
-const SERVER_URL = "http://localhost:8000"
 
 export default function DownloadsDropdown() {
     const [downloadItems, setDownloadItems] = useState<FileItem[]>([])
