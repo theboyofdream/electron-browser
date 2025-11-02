@@ -4,3 +4,5 @@ backend
 rgui
 bucket
 server
+dist
+browser/public

@@ -1,27 +1,42 @@
 {
   "name": "browser",
+  "displayName": "Browser",
   "version": "1.0.0",
   "description": "A browser build on top of electron",
   "main": "main.js",
   "type": "module",
   "scripts": {
     "dev:old-ref": "concurrently \"cd gui && npm run dev\" \"electronmon ./main.js --trace-warnings\"",
-    "dev": "electronmon ./main.js --trace-warnings"
+    "dev": "electronmon ./main.js --trace-warnings",
+    "build": "electron-builder"
   },
   "keywords": [
     "electron",
     "browser"
   ],
+  "build": {
+      "appId": "com.theboyofdream.browser",
+    "icon": "43162530.ico",
+    "productName": "Browser",
+    "win": {"target": "NSIS"}
+  },
+ "publish": {
+  "provider": "github",
+  "owner": "theboyofdream",
+  "repo": "electron-browser",
+  "private": false
+}
+,
   "author": "Abhishek Chaurasiya",
   "license": "ISC",
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "electron": "^38.4.0",
+    "electron": "38.4.0",
+    "electron-builder": "^26.0.12",
     "electronmon": "^2.0.3"
   },
   "dependencies": {
     "axios": "^1.12.2",
-    "electron-store": "^11.0.2",
     "form-data": "^4.0.4"
   }
 }

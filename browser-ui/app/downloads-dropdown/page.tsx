@@ -34,7 +34,7 @@ interface FileItem {
     name: string
     size: number
     sizeFormatted: string
-    modified?: Date
+    modified?: number
     downloadUrl?: string
     previewUrl?: string
 }

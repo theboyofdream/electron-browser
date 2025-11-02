@@ -115,7 +115,7 @@ export default function Home() {
             placeholder="Search or enter web address"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                browser.tab.navigate(null, e.target.value?.trim() || "google")
+                browser.tab.navigate(null, e.currentTarget?.value?.trim() || "google")
               }
             }}
           />

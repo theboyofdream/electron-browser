@@ -11,9 +11,10 @@ import {
     shell,
     clipboard,
     screen,
-    dialog
+    dialog,
+    protocol
 } from "electron"
-import { dirname, join } from "node:path"
+import path, { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import Downloader from "./downloader.js"
 
@@ -66,19 +67,52 @@ const frames = {
     webview: null
 }
 
-// Very aggressive download detection - treats many URLs as downloads
-function isDownloadUrl(url) {
-    const downloadPatterns = [
-        /\.(exe|zip|rar|7z|tar|gz|pdf|doc|docx|xls|xlsx|ppt|pptx|mp4|mp3|avi|mkv|mov|wav|flac|jpg|jpeg|png|gif|bmp|svg|webp|psd|ai|eps|tiff|iso|dmg|pkg|deb|rpm|apk|msi)$/i
-    ]
-    return downloadPatterns.some((p) => p.test(url))
+// protocol.registerStreamProtocol('app', (request, callback) => {
+//   const url = request.url.replace('app://', '');
+//   const filePath = join(__dirname, 'public', url);
+//   callback(createReadStream(filePath));
+// });
+
+const loadUiFromFile = true
+
+const buildPath = path.join(__dirname, "public")
+const toFile = (file) => path.join(buildPath, file)
+
+const FRAME_PAGES_LINK = {
+    header: loadUiFromFile ? toFile("header.html") : "http://localhost:3000/header",
+    downloadsDropdown: loadUiFromFile
+        ? toFile("downloads-dropdown.html")
+        : "http://localhost:3000/downloads-dropdown",
+    moreOptionsDropdown: loadUiFromFile
+        ? toFile("more-options-dropdown.html")
+        : "http://localhost:3000/more-options-dropdown"
 }
 
-// Very aggressive download detection - treats many URLs as downloads
-function isMaliciousUrl(url) {
-    const urlPatterns = [/http:/i]
-    return urlPatterns.some((p) => p.test(url))
-}
+// const FRAME_PAGES_LINK = {
+//     header: !app.isPackaged && testBuild ? toFile("header.html") : "http://localhost:3000/header",
+//     downloadsDropdown:
+//         !app.isPackaged && testBuild
+//             ? toFile("downloads-dropdown.html")
+//             : "http://localhost:3000/downloads-dropdown",
+//     moreOptionsDropdown:
+//         !app.isPackaged && testBuild
+//             ? toFile("more-options-dropdown.html")
+//             : "http://localhost:3000/more-options-dropdown"
+// }
+
+// // Very aggressive download detection - treats many URLs as downloads
+// function isDownloadUrl(url) {
+//     const downloadPatterns = [
+//         /\.(exe|zip|rar|7z|tar|gz|pdf|doc|docx|xls|xlsx|ppt|pptx|mp4|mp3|avi|mkv|mov|wav|flac|jpg|jpeg|png|gif|bmp|svg|webp|psd|ai|eps|tiff|iso|dmg|pkg|deb|rpm|apk|msi)$/i
+//     ]
+//     return downloadPatterns.some((p) => p.test(url))
+// }
+
+// // Very aggressive download detection - treats many URLs as downloads
+// function isMaliciousUrl(url) {
+//     const urlPatterns = [/http:/i]
+//     return urlPatterns.some((p) => p.test(url))
+// }
 
 const Dropdowns = {
     /**
@@ -353,10 +387,13 @@ const Tabs = {
 
 function attachContextMenu(_view) {
     // frames.webview.webContents.on("context-menu", (event, params) => {
-    let view = null
-    if (_view) {
-        view = _view
-    } else {
+    let view = _view
+    // if (_view) {
+    //     view = _view
+    // } else {
+    //     view = tabs.get(activeTabId)?.view
+    // }
+    if (!view) {
         view = tabs.get(activeTabId)?.view
     }
     if (!view) return
@@ -595,33 +632,29 @@ async function onReady() {
         ...BROWSER_WINDOW_OPTIONS,
         transparent: false
     })
-    // attachContextMenu()
-    // frames.webview.webContents.loadURL("https://www.github.com/theboyofdream")
-
-    // frames.webview.webContents.on("did-navigate", () => { })
-    // frames.webview.webContents.on("page-title-updated", () => { })
 
     frames.downloadDropdown = new WebContentsView({
         ...BROWSER_WINDOW_OPTIONS,
         hasShadow: true
     })
-    frames.downloadDropdown.webContents.loadURL("http://localhost:3000/downloads-dropdown")
-    // frames.downloadDropdown.on("blur", () => Dropdowns.hideAll())
+    frames.downloadDropdown.webContents[loadUiFromFile?"loadFile":"loadURL"](FRAME_PAGES_LINK.downloadsDropdown)
     // frames.downloadDropdown.webContents.openDevTools({ mode: "detach" })
-
+   
     frames.moreOptions = new WebContentsView({
         ...BROWSER_WINDOW_OPTIONS,
         hasShadow: true
     })
-    frames.moreOptions.webContents.loadURL("http://localhost:3000/more-options-dropdown")
-    // frames.moreOptions.on("blur", () => Dropdowns.hideAll())
-
+    frames.moreOptions.webContents[loadUiFromFile ? "loadFile" : "loadURL"](
+        FRAME_PAGES_LINK.moreOptionsDropdown
+    )
+    // frames.moreOptions.webContents.openDevTools({ mode: "detach" })
+   
     frames.header = new WebContentsView({
         ...BROWSER_WINDOW_OPTIONS,
         height: HEADER_SIZE,
         show: true
     })
-    frames.header.webContents.loadURL("http://localhost:3000/header")
+    frames.header.webContents[loadUiFromFile ? "loadFile" : "loadURL"](FRAME_PAGES_LINK.header)
     // frames.header.webContents.openDevTools({ mode: "detach" })
 
     //----------------------

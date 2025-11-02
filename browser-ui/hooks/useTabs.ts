@@ -4,6 +4,11 @@ type TabData = {
     id: number
     title?: string
     favicon?: string
+    url: string,
+    loading: number,
+    canGoBack: boolean,
+    canGoForward: boolean,
+    // active: tabData.id === activeTabId
 }
 
 export function useTabs() {
@@ -17,14 +22,14 @@ export function useTabs() {
             setTabs(() => list);
         };
 
-        const handleStartLoading = (_, id: number) => setLoadingTabId(() => id);
-        const handleStopLoading = (_, id: number) => setLoadingTabId(() => -1);
+        const handleStartLoading = (_: unknown, id: number) => setLoadingTabId(() => id);
+        const handleStopLoading = () => setLoadingTabId(() => -1);
 
-        const handleUpdate = (_, data) => {
+        const handleUpdate = (_: unknown, data: TabData) => {
             setTabs((prev) => prev.map((t) => (t.id === data.id ? { ...t, ...data } : t)));
         };
 
-        const handleSetActive = (_, id) => setActiveTabId(() => id)
+        const handleSetActive = (_: unknown, id: number) => setActiveTabId(() => id)
 
         fetchTabs();
 

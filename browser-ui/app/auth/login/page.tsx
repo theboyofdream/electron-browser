@@ -59,7 +59,7 @@ export default function LoginPage() {
                         {...register("email")}
                         disabled={isSubmitting}
                       />
-                      <FieldError errors={errors.email} />
+                      {/* <FieldError errors={errors.email} /> */}
                     </Field>
                     <Field>
                       <div className="flex items-center justify-between">
@@ -101,7 +101,7 @@ export default function LoginPage() {
                           )}
                         </Button>
                       </div>
-                      <FieldError errors={errors.password} />
+                      {/* <FieldError errors={errors.password} /> */}
                     </Field>
                     <Field>
                       <Button type="submit">Login</Button>
